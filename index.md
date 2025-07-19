@@ -1,19 +1,17 @@
 ---
-title: "Docker Internals"
+title: "Docker Internals: Namespaces e CGroups Spiegati"
 date: 2025-07-13T08:06:25+06:00
-description: Introduction to Sample Post
+description: Guida completa ai meccanismi interni di Docker e all'isolamento dei container
 menu:
-  sidebar:
-    name: Introduction
-    identifier: introduction
-    weight: 10
-tags: ["Basic", "Multi-lingual"]
-categories: ["Basic"]
+sidebar:
+name: Docker Internals
+identifier: docker-internals
+weight: 10
+tags: ["Docker", "Linux", "Containerizzazione", "DevOps"]
+categories: ["Tecnologie", "Sistema"]
 ---
 
 # Docker e Linux Namespaces: Guida Completa alla Containerizzazione
-
-*Pubblicato in Marzo 2025 - di Francesco Montelli*
 
 La containerizzazione ha rivoluzionato il modo in cui sviluppiamo e distribuiamo le applicazioni. In questo articolo esploreremo Docker e i meccanismi fondamentali che rendono possibile l'isolamento dei container: i **namespaces** e i **cgroups** di Linux.
 
@@ -53,14 +51,10 @@ L'efficienza dei container permette:
 - **Maggiore densità**: Numerosi container possono essere eseguiti sullo stesso server
 - **Riduzione dei costi**: Uso più efficiente dell'hardware si traduce in minori costi infrastrutturali
 
-## Integrazione DevOps e CI/CD
-
-Docker si integra perfettamente nei flussi di lavoro moderni:
-
-- **Automazione completa**: Dal coding al deployment, tutto può essere automatizzato
-- **Coerenza ambientale**: Lo stesso container viene utilizzato in sviluppo, test e produzione
-
 ## Architettura Docker
+
+![docker-architecture](./imgs/docker-architecture.png)
+> Architettura dei componenti principali di Docker
 
 L'architettura di Docker si basa su tre componenti principali:
 
@@ -78,15 +72,18 @@ Il sistema di archiviazione e distribuzione delle immagini Docker. Docker Hub è
 
 ### Flusso di Esecuzione di un Container
 
-Quando eseguiamo `docker run`, Docker:
+Quando eseguiamo `docker run`, Docker esegue questi passaggi:
 
-1. **Verifica l'immagine**: Controlla se è disponibile localmente, altrimenti la scarica dal registry
-2. **Crea il container**: Istanzia un nuovo container basato sull'immagine
-3. **Alloca il filesystem**: Assegna un filesystem in scrittura come layer aggiuntivo
-4. **Configura la rete**: Imposta l'indirizzo IP e la connessione di rete
-5. **Esegue il comando**: Avvia il processo specificato
+1. **Risoluzione dell'immagine**: Verifica la disponibilità locale, altrimenti effettua il pull dal registry
+2. **Creazione del container**: Istanzia un nuovo container basato sull'immagine specificata  
+3. **Configurazione del filesystem**: Aggiunge un layer scrivibile sopra l'immagine read-only
+4. **Setup networking**: Configura l'interfaccia di rete e l'indirizzamento IP
+5. **Avvio del processo**: Esegue il comando specificato come processo principale
 
 ## Docker vs Virtual Machine
+
+![virt-vs-docker](./imgs/virtualization-vs-docker.png)
+> Comparazione dello stack usato da Docker e dai sistemi di virtualizzazione
 
 La differenza fondamentale tra containerizzazione e virtualizzazione risiede nell'architettura:
 
@@ -115,112 +112,157 @@ Linux supporta otto tipi di namespace:
 
 ### PID Namespace
 
-I namespace PID permettono di isolare i processi, assegnando identificativi distinti. Caratteristiche principali:
+I namespace di tipo PID permettono di isolare i processi, assegnando loro identificativi (PID) distinti rispetto ad altri namespace. Di default, un sistema Linux esegue tutti i processi all'interno di un unico namespace PID, rendendoli reciprocamente visibili. È però possibile creare namespace PID annidati, ottenendo gruppi di processi isolati dal resto del sistema.
 
-- Organizzazione **gerarchica**: ogni namespace ha un padre
-- **Visibilità**: i processi sono visibili dai namespace superiori
-- **Mappatura**: un processo può avere PID diversi in namespace diversi
+Questa caratteristica è cruciale nella gestione dei container, dove ogni istanza può avere un proprio processo di init con PID 1, senza interferire con altri container né con l'host.
 
-Questo è fondamentale per i container, permettendo a ogni istanza di avere il proprio processo init con PID 1.
+A differenza di altri namespace, quelli di tipo PID sono organizzati gerarchicamente: ogni namespace ha un padre, e i processi al suo interno sono visibili dai namespace superiori. Un sistema di mappatura consente a un processo di avere PID diversi a seconda del namespace da cui viene osservato. Questa visibilità permette anche di eseguire syscall su un processo utilizzando il PID valido nel namespace del chiamante.
+
+
+![Gerchia PID](./imgs/ns_pid_hier2.jpg)
+> Rappresentazione della gerarchia tra processi nel namespace pid
 
 ### Network Namespace
 
-L'isolamento delle risorse di rete consente a ciascun namespace di avere il proprio stack di rete indipendente:
+L'isolamento delle risorse di rete (come indirizzi IP, tabelle di routing e file di sistema come `/proc/net`) consente a ciascun namespace di rete di avere il proprio stack di rete indipendente. Questo significa che ogni processo all'interno del namespace opera in una sottorete isolata, senza possibilità di comunicare con il resto del sistema, a meno di configurazioni eseguite ad-hoc.
 
-- **Sicurezza**: Impedisce accessi non autorizzati alla rete dell'host
-- **Port mapping**: Docker usa questo meccanismo per mappare le porte
-- **Reti virtuali**: Possibilità di creare reti condivise tra gruppi di processi
+Questo isolamento è un meccanismo essenziale per la sicurezza: impedisce a un processo compromesso di accedere direttamente alla rete del sistema host o di intercettare traffico non autorizzato. In questo modo, eventuali attacchi o compromissioni restano confinati all'interno del namespace di rete.
+
+Nel contesto di Docker, questa tipologia di namespace viene utilizzata per mappare le porte del sistema host su porte interne ai container, permettendo ai servizi interni di essere raggiungibili dall'esterno in modo controllato. Questo consente di esporre solo i servizi necessari, migliorando la sicurezza e la gestione delle connessioni.
+
+![Esempio comunicazione tramite network namespace](./imgs/net_ns.jpg)
+> Esempio comunicazione tramite network namespace
+
+È inoltre possibile creare reti virtuali condivise tra un gruppo ristretto di processi, consentendo loro di comunicare tra loro senza esporli all'esterno. Un esempio di questo comportamento è illustrato nella figura precedente. Allo stesso modo, si possono configurare reti che permettono la comunicazione tra namespace diversi, facilitando l'interazione tra container o processi isolati pur mantenendo un elevato livello di sicurezza e modularità.
 
 ## CGroups: Controllo delle Risorse
 
-I **cgroups** (control groups) sono una funzionalità del kernel Linux che consente di limitare, monitorare e isolare l'uso delle risorse di sistema tra gruppi di processi.
+I *cgroups* (control groups) sono una funzionalità del kernel Linux che consente di limitare, monitorare e isolare l'uso delle risorse di sistema (come CPU, memoria, I/O su disco e rete) tra gruppi di processi.
 
-### Risorse Gestibili
+Grazie ai *cgroups*, è possibile definire quote e priorità, impedendo che un singolo processo monopolizzi le risorse del sistema e garantendo un migliore isolamento tra applicazioni.
 
-- **Memoria**: Limiti soft e hard, controllo dello swap
-- **CPU**: Monitoring e throttling del consumo
-- **Block I/O**: Controllo delle operazioni di lettura/scrittura
-- **Network**: Limitazione del traffico di rete
-- **Device**: Controllo dell'accesso ai dispositivi
+I *cgroups* sono gestiti tramite un'interfaccia a livello di filesystem, tipicamente montata sotto `/sys/fs/cgroup/`. Ogni gerarchia di *cgroups* corrisponde a una directory, con sottodirectory che rappresentano i diversi gruppi di controllo. All'interno di queste directory, file speciali permettono di configurare i limiti e ottenere statistiche sulle risorse consumate dai processi appartenenti al gruppo. Ad esempio, scrivendo un valore nel file `memory.max`, è possibile impostare un limite massimo di memoria per i processi del gruppo.
 
-### Interfaccia Filesystem
+Questa tecnologia è ampiamente utilizzata in ambienti containerizzati per garantire un uso efficiente delle risorse e migliorare l'isolamento tra container.
 
-I cgroups sono gestiti tramite un'interfaccia filesystem, tipicamente in `/sys/fs/cgroup/`. Ogni gerarchia corrisponde a una directory con file speciali per configurare limiti e ottenere statistiche.
+A livello concettuale possiamo gestire le seguenti categorie di risorse:
+
+- **Memoria**: possiamo tenere traccia del consumo di memoria (es. quantitativi massimi, possibilità di usare swap). I limiti possono essere soft, in cui la memoria viene reclamata in caso di necessità, oppure hard, in cui il superamento scatena un OOM Killer;
+- **CPU**: tiene traccia del consumo di CPU. Possiamo impostare dei limiti che, se superati, causano throttle sulle CPU che eseguono i processi "problematici";
+- **Blkio**: tiene traccia delle operazioni di I/O. In caso di letture/scritture eccessive, è in grado di applicare throttling;
+- **Network**: possiamo limitare il traffico di rete;
+- **Device**: possiamo limitare quali dispositivi un processo è in grado di scrivere.
+
+
+---
 
 ## Demo Pratiche
+### Demo 1: Esplorare i PID Namespace
 
-### Demo 1: PID Namespaces in Azione
-
-Questa demo dimostra che i container sono semplicemente processi nel sistema host:
+Questa demo illustra come i container sono processi isolati nell'host:
 
 ```bash
-# 1. Avviare un container Ubuntu
-docker run -it ubuntu bash
+# 1. Avviare un container Ubuntu con una shell interattiva
+docker run -it --name pid-demo ubuntu bash
 
-# 2. Nel container, eseguire un processo
-watch ps aux
+# 2. Nel container, avviare un processo distintivo
+# (dalla shell del container)
+watch -n 1 'ps aux | head -10'
 
-# 3. Dall'host, trovare il processo
+# 3. Da un'altra shell sull'host, identificare il processo
 ps aux | grep watch
 
-# 4. Visualizzare la catena dei processi
-pstree -s <PID>
+# 4. Analizzare la gerarchia dei processi
+CONTAINER_PID=$(docker inspect --format '{{.State.Pid}}' pid-demo)
+pstree -p $CONTAINER_PID
 
-# 5. Verificare il mapping dei PID
-grep NSpid /proc/<PID>/status
+# 5. Verificare il mapping dei namespace
+ls -la /proc/$CONTAINER_PID/ns/
+grep -E 'NSpid|NStgid' /proc/$CONTAINER_PID/status
 
-# 6. Terminare il processo dall'host
-kill <PID>
+# 6. Terminare il processo dall'host (dimostra che sono lo stesso processo)
+kill $CONTAINER_PID
+# Il container si fermerà
 ```
 
-### Demo 2: Network Namespace
+### Demo 2: Network Namespace e Port Mapping
 
-Questa demo mostra il funzionamento del port mapping:
+Questa demo mostra il funzionamento dell'isolamento di rete:
 
 ```bash
-# 1. Avviare container con port mapping
-docker run -d -p 9090:8080 --name net-demo python:3 python -m http.server 8080
+# 1. Avviare un container con port mapping
+docker run -d -p 8080:80 --name web-demo nginx
 
-# 2. Verificare il mapping
-docker port net-demo
+# 2. Verificare il mapping delle porte
+docker port web-demo
+ss -tlnp | grep :8080
 
 # 3. Ottenere il PID del container
-CONTAINER_PID=$(docker inspect --format '{{.State.Pid}}' net-demo)
+CONTAINER_PID=$(docker inspect --format '{{.State.Pid}}' web-demo)
 
 # 4. Confrontare i network namespace
-ls -l /proc/1/ns/net
-ls -l /proc/$CONTAINER_PID/ns/net
+ls -l /proc/1/ns/net      # Host namespace
+ls -l /proc/$CONTAINER_PID/ns/net  # Container namespace
 
-# 5. Testare la connessione
-telnet 127.0.0.1 8080  # Fallisce
-telnet 127.0.0.1 9090  # Funziona
+# 5. Testare la connettività
+curl localhost:80         # Fallisce - porta non esposta sull'host
+curl localhost:8080       # Funziona - porta mappata
 
-# 6. Usare nsenter per accedere al namespace del container
-nsenter --target $CONTAINER_PID --net telnet 127.0.0.1 8080  # Funziona
+# 6. Accedere al namespace del container
+nsenter --target $CONTAINER_PID --net --mount --pid bash
+# Ora siamo "dentro" il container
+curl localhost:80         # Funziona - siamo nel namespace del container
 ```
 
-### Demo 3: CGroups e Limitazione Memoria
+### Demo 3: CGroups e Limitazione delle Risorse
 
-Questa demo mostra come i cgroups limitano l'uso della memoria:
+Questa demo mostra il controllo delle risorse tramite cgroups:
 
 ```bash
-# 1. Creare un cgroup con limite di memoria
-mkdir /sys/fs/cgroup/demo3_memory
-echo 104857600 > /sys/fs/cgroup/demo3_memory/memory.max
-echo 0 > /sys/fs/cgroup/demo3_memory/memory.swap.max
+# 1. Creare un container con limiti di memoria
+docker run -it --memory=100m --name memory-demo ubuntu bash
 
-# 2. Test normale (funziona)
-python3 -c "a = bytearray(200 * 1024 * 1024)"
+# 2. Trovare il cgroup del container
+CONTAINER_ID=$(docker inspect --format '{{.Id}}' memory-demo)
+cat /sys/fs/cgroup/memory/docker/$CONTAINER_ID/memory.limit_in_bytes
 
-# 3. Spostare la shell nel cgroup
-echo $$ | sudo tee /sys/fs/cgroup/demo3_memory/cgroup.procs
+# 3. Test di allocazione memoria normale (dalla shell del container)
+python3 -c "
+data = []
+for i in range(50):
+    data.append(b'0' * (1024 * 1024))  # 1MB per iterazione
+    print(f'Allocated {i+1} MB')
+"
 
-# 4. Test con limite (fallisce)
-python3 -c "a = bytearray(200 * 1024 * 1024)"
-# Output: Killed
+# 4. Test che supera il limite (dovrebbe fallire)
+python3 -c "
+data = []
+for i in range(150):
+    data.append(b'0' * (1024 * 1024))  # Tenta di allocare 150MB
+    print(f'Allocated {i+1} MB')
+"
+# Il processo verrà terminato dal kernel OOM killer
 
-# 5. Verificare i log di sistema
-sudo dmesg | grep -i "Killed process"
+# 5. Verificare i log del sistema
+dmesg | tail -n 20 | grep -i "killed process"
+```
+
+### Demo 4: Monitoraggio Real-time delle Risorse
+
+```bash
+# 1. Avviare un container con stress testing
+docker run -d --name stress-demo --memory=200m --cpus=0.5 ubuntu \
+  bash -c "apt update && apt install -y stress && stress --cpu 2 --memory 1 --memory-bytes 150M"
+
+# 2. Monitorare l'utilizzo delle risorse
+docker stats stress-demo
+
+# 3. Ispezionare i cgroup files direttamente
+CONTAINER_ID=$(docker inspect --format '{{.Id}}' stress-demo)
+watch -n 1 "cat /sys/fs/cgroup/memory/docker/$CONTAINER_ID/memory.usage_in_bytes"
+
+# 4. Analizzare le statistiche CPU
+cat /sys/fs/cgroup/cpu/docker/$CONTAINER_ID/cpu.stat
 ```
 
 ## Conclusioni
