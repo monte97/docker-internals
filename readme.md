@@ -1,6 +1,8 @@
 # Docker Internals: Namespaces e CGroups Spiegati
 
 Guida completa ai meccanismi interni di Docker e all'isolamento dei container tramite **Linux namespaces** e **cgroups**. Include spiegazioni dettagliate, esempi pratici e demo da eseguire sul proprio sistema.
+[Blog post completo](https://montelli.dev/posts/docker-internals/) 
+
 
 ## Contenuti
 
@@ -45,4 +47,3 @@ Assicurati di posizionare le immagini nella cartella `./imgs/` come indicato nel
 
 Contenuti rilasciati sotto licenza MIT, tranne dove diversamente specificato.  
 Autore: Francesco Montelli  
-[Blog post completo](https://montelli.dev/posts/docker-internals/) 
