@@ -3,10 +3,10 @@ title: "Docker Internals: Namespaces e CGroups Spiegati"
 date: 2025-07-13T08:06:25+06:00
 description: Guida completa ai meccanismi interni di Docker e all'isolamento dei container
 menu:
-sidebar:
-name: Docker Internals
-identifier: docker-internals
-weight: 10
+  sidebar:
+    name: Docker Internals
+    identifier: docker-internals
+    weight: 10
 tags: ["Docker", "Linux", "Containerizzazione", "DevOps"]
 categories: ["Tecnologie", "Sistema"]
 ---
